@@ -18,6 +18,15 @@ studying Operating Systems: Three Easy Pieces (OSTEP).
 
 ---
 
+## Project structure
+
+myshell/
+
+├── mysh.c       # shell source code
+
+└── README.md    
+---
+
 ## Build
 
 ```bash
@@ -126,9 +135,7 @@ inside the handler to reap finished background children automatically.
 | `signal()` | register signal handlers |
 | `getenv()` | read environment variables (HOME for cd) |
 
-myshell/
-├── mysh.c       # shell source code
-└── README.md    # this file
+
 
 ---
 
@@ -148,4 +155,4 @@ myshell/
 
 ---
 
-## Project structure
+
