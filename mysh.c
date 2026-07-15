@@ -1,10 +1,10 @@
-// mysh.c — Step 3: Pipes (cmd1|cmd2))
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <signal.h>    // signal(), SIG_IGN, SIG_DFL, SIGINT
 
 #define MAX_LINE  1024
 #define MAX_ARGS  64
@@ -36,8 +36,10 @@ int parse(char *line, char **argv, char **infile, char **outfile, int *append) {
     return argc;
 }
 
-// execute a single command with optional redirection
 void exec_cmd(char **argv, char *infile, char *outfile, int append) {
+    // restore SIGINT in child so it can be killed by Ctrl+C
+    signal(SIGINT, SIG_DFL);
+
     if (infile) {
         int fd = open(infile, O_RDONLY);
         if (fd < 0) { perror(infile); exit(1); }
@@ -59,6 +61,9 @@ void exec_cmd(char **argv, char *infile, char *outfile, int append) {
 int main(void) {
     char  line[MAX_LINE];
 
+    // parent ignores Ctrl+C 
+    signal(SIGINT, SIG_IGN);
+
     while (1) {
         printf("mysh> ");
         fflush(stdout);
@@ -68,57 +73,63 @@ int main(void) {
             break;
         }
 
-        // check for pipe
+        
         char *pipe_pos = strchr(line, '|');
 
         if (pipe_pos) {
-            // split into two commands at the '|'
             *pipe_pos = '\0';
             char *left  = line;
             char *right = pipe_pos + 1;
 
-            // parse both sides
             char *argv1[MAX_ARGS], *argv2[MAX_ARGS];
             char *in1, *out1, *in2, *out2;
             int   app1, app2;
             parse(left,  argv1, &in1, &out1, &app1);
             parse(right, argv2, &in2, &out2, &app2);
 
-            // create the pipe
             int pipefd[2];
             if (pipe(pipefd) < 0) { perror("pipe"); continue; }
 
-            // fork left side (ls)
             pid_t pid1 = fork();
             if (pid1 == 0) {
-                close(pipefd[0]);                    // close read end
-                dup2(pipefd[1], STDOUT_FILENO);      // stdout → pipe write end
-                close(pipefd[1]);                    // cleanup
+                close(pipefd[0]);
+                dup2(pipefd[1], STDOUT_FILENO);
+                close(pipefd[1]);
                 exec_cmd(argv1, in1, out1, app1);
             }
 
-            // fork right side (grep)
             pid_t pid2 = fork();
             if (pid2 == 0) {
-                close(pipefd[1]);                    // close write end
-                dup2(pipefd[0], STDIN_FILENO);       // stdin → pipe read end
-                close(pipefd[0]);                    // cleanup
+                close(pipefd[1]);
+                dup2(pipefd[0], STDIN_FILENO);
+                close(pipefd[0]);
                 exec_cmd(argv2, in2, out2, app2);
             }
 
-            // parent closes both ends and waits for both children
             close(pipefd[0]);
             close(pipefd[1]);
             waitpid(pid1, NULL, 0);
             waitpid(pid2, NULL, 0);
 
         } else {
-            // no pipe — same as before
             char *argv[MAX_ARGS];
             char *infile, *outfile;
             int   append;
             int argc = parse(line, argv, &infile, &outfile, &append);
             if (argc == 0) continue;
+
+            // ── builtins ──────────────────────────────
+            if (strcmp(argv[0], "cd") == 0) {
+                char *path = argv[1] ? argv[1] : getenv("HOME");
+                if (chdir(path) < 0)
+                    perror("cd");
+                continue;
+            }
+
+            if (strcmp(argv[0], "exit") == 0) {
+                exit(0);
+            }
+          
 
             pid_t pid = fork();
             if (pid < 0) { perror("fork"); continue; }
@@ -128,4 +139,3 @@ int main(void) {
     }
     return 0;
 }
-
